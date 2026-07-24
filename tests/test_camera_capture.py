@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from camera_capture import capture_image
+from camera_capture import capture_image, main
 
 
 class FakeCamera:
@@ -35,6 +35,16 @@ class CameraCaptureTests(unittest.TestCase):
     def test_capture_image_requires_a_directory(self):
         with self.assertRaises(ValueError):
             capture_image("   ", camera=FakeCamera())
+
+    def test_main_captures_image_from_cli_arguments(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            camera = FakeCamera()
+            output_dir = Path(tmpdir)
+            exit_code = main([str(output_dir), "--filename", "cli.jpg"], camera=camera)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(camera.saved_paths, [str(output_dir / "cli.jpg")])
+            self.assertTrue((output_dir / "cli.jpg").exists())
 
 
 if __name__ == "__main__":

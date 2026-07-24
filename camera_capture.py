@@ -1,5 +1,7 @@
+import argparse
+import sys
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Sequence
 
 
 class CameraProtocol(Protocol):
@@ -26,3 +28,28 @@ def capture_image(output_dir: str, filename: str = "capture.jpg", camera: Option
 
     camera.capture(str(image_path), use_video_port=False)
     return image_path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Capture an image from a Raspberry Pi camera")
+    parser.add_argument("output_dir", nargs="?", default=".", help="Directory where the captured image will be saved")
+    parser.add_argument("--filename", default="capture.jpg", help="Name of the captured image file")
+    return parser
+
+
+def main(args: Optional[Sequence[str]] = None, camera: Optional[CameraProtocol] = None) -> int:
+    parser = build_parser()
+    parsed_args = parser.parse_args(list(args) if args is not None else None)
+
+    try:
+        image_path = capture_image(parsed_args.output_dir, filename=parsed_args.filename, camera=camera)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(str(image_path))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
