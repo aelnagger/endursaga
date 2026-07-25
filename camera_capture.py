@@ -20,11 +20,11 @@ def capture_image(output_dir: str, filename: str = "capture.jpg", camera: Option
 
     if camera is None:
         try:
-            from picamera import PiCamera
+            import picamzero
         except ImportError as exc:
-            raise RuntimeError("picamera is required for real captures on a Raspberry Pi") from exc
+            raise RuntimeError("picamzero is required for real captures on a Raspberry Pi") from exc
 
-        camera = PiCamera()
+        camera = picamzero.Camera()
 
     camera.capture(str(image_path), use_video_port=False)
     return image_path

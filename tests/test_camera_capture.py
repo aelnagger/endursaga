@@ -1,6 +1,8 @@
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from camera_capture import capture_image, main
 
@@ -45,6 +47,25 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(camera.saved_paths, [str(output_dir / "cli.jpg")])
             self.assertTrue((output_dir / "cli.jpg").exists())
+
+    def test_capture_image_uses_picamzero_when_available(self):
+        class FakePicamZeroCamera:
+            def __init__(self):
+                self.calls = []
+
+            def capture(self, output_path, use_video_port=False):
+                self.calls.append((output_path, use_video_port))
+                Path(output_path).write_bytes(b"picamzero")
+
+        fake_module = types.SimpleNamespace(Camera=FakePicamZeroCamera)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict("sys.modules", {"picamzero": fake_module}):
+                image_path = capture_image(tmpdir)
+
+            self.assertTrue(image_path.exists())
+            self.assertEqual(image_path.name, "capture.jpg")
+            self.assertEqual(image_path.read_bytes(), b"picamzero")
 
 
 if __name__ == "__main__":
