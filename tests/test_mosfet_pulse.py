@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
-from mosfet_pulse import MosfetPulseController
+from endursaga.mosfet_pulse import MosfetPulseController
 
 
 class MosfetPulseControllerTests(unittest.TestCase):

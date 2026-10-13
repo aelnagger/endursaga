@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from camera_capture import capture_image, main
+from endursaga.camera_capture import capture_image, main
 
 
 class FakeCamera:
