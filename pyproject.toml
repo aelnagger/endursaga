@@ -7,7 +7,9 @@ authors = [
     { name = "Adam Elnagger", email = "adam.elnagger@gmail.com" }
 ]
 requires-python = ">=3.15"
-dependencies = []
+dependencies = [
+    "gpiozero>=2.0.1.post3",
+]
 
 [project.scripts]
 endursaga = "endursaga:main"
