@@ -38,7 +38,7 @@ class TrialRunnerTests(unittest.TestCase):
         self.assertEqual(evaluator.call_args_list[1].args[0].name, "trial_0002.jpg")
         controller_class.return_value.close.assert_called_once_with()
 
-    def test_run_trials_rejects_non_d6_evaluator_result(self):
+    def test_run_trials_rejects_face_outside_die_range(self):
         with patch("endursaga.MosfetPulseController"):
             with tempfile.TemporaryDirectory() as output_dir:
                 with self.assertRaises(ValueError):
@@ -50,14 +50,47 @@ class TrialRunnerTests(unittest.TestCase):
                         settle_seconds=0,
                     )
 
+    def test_run_trials_accepts_d20_face(self):
+        with patch("endursaga.MosfetPulseController"):
+            with tempfile.TemporaryDirectory() as output_dir:
+                results = run_trials(
+                    iterations=1,
+                    evaluator=lambda image_path: 20,
+                    output_dir=output_dir,
+                    camera=FakeCamera([]),
+                    sides=20,
+                    settle_seconds=0,
+                )
+
+        self.assertEqual(results, {1: 20})
+
     def test_analyze_results_counts_faces_and_computes_chi_square(self):
         counts, chi_square = analyze_results({1: 1, 2: 2, 3: None})
 
         self.assertEqual(counts, {1: 1, 2: 1, 3: 0, 4: 0, 5: 0, 6: 0})
         self.assertAlmostEqual(chi_square, 4.0)
 
-    def test_main_requires_an_evaluator(self):
-        self.assertEqual(main(["2"]), 2)
+    def test_analyze_results_supports_d20(self):
+        counts, chi_square = analyze_results({1: 20, 2: None}, sides=20)
+
+        self.assertEqual(len(counts), 20)
+        self.assertEqual(counts[20], 1)
+        self.assertIsNotNone(chi_square)
+
+    @patch("endursaga.OrbDieRecognizer")
+    @patch("endursaga.MosfetPulseController")
+    def test_main_uses_orb_recognizer_by_default(self, controller_class, recognizer_class):
+        recognizer_class.return_value.evaluate.return_value = 6
+        with tempfile.TemporaryDirectory() as output_dir:
+            result = main(
+                ["1", "--output-dir", output_dir, "--settle-seconds", "0"],
+                camera=FakeCamera([]),
+                gpio_driver=Mock(),
+            )
+
+        self.assertEqual(result, 0)
+        recognizer_class.assert_called_once()
+        recognizer_class.return_value.evaluate.assert_called_once()
 
 
 if __name__ == "__main__":

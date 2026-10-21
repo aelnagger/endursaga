@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.15"
 dependencies = [
     "gpiozero>=2.0.1.post3",
+    "opencv-python-headless>=4.10.0.84",
 ]
 
 [project.scripts]

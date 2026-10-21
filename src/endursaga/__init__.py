@@ -8,6 +8,7 @@ from typing import Callable, Optional, Sequence
 from gpiozero.exc import GPIOZeroError
 
 from endursaga.camera_capture import CameraProtocol, capture_image
+from endursaga.dice_vision import OrbDieRecognizer, SUPPORTED_SIDES
 from endursaga.mosfet_pulse import GPIOOutput, MosfetPulseController
 
 Evaluator = Callable[[Path], Optional[int]]
@@ -21,7 +22,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--settle-seconds", type=float, default=1.0, help="Delay between the pulse and image capture")
     parser.add_argument(
         "--evaluator",
-        help="Image evaluator as module:function; it should accept an image path and return 1-6 or None",
+        help="Custom image evaluator as module:function; it should return a face label or None",
+    )
+    parser.add_argument("--templates-dir", default="templates", help="Directory containing labeled face templates")
+    parser.add_argument("--sides", type=int, choices=SUPPORTED_SIDES, default=6, help="Number of die faces")
+    parser.add_argument(
+        "--first-face",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="Lowest face label (use 0 for a d10 labeled 0-9)",
     )
     return parser
 
@@ -45,6 +55,8 @@ def run_trials(
     gpio_driver: Optional[GPIOOutput] = None,
     pulse_seconds: float = 1.0,
     settle_seconds: float = 1.0,
+    sides: int = 6,
+    first_face: int = 1,
     pause: Optional[Callable[[float], None]] = None,
 ) -> dict[int, Optional[int]]:
     if iterations <= 0:
@@ -53,6 +65,10 @@ def run_trials(
         raise ValueError("pulse_seconds must be greater than 0")
     if settle_seconds < 0:
         raise ValueError("settle_seconds must be greater than or equal to 0")
+    if sides not in SUPPORTED_SIDES:
+        raise ValueError(f"sides must be one of {SUPPORTED_SIDES}")
+    if first_face not in (0, 1):
+        raise ValueError("first_face must be 0 or 1")
 
     wait = pause or time.sleep
     controller = MosfetPulseController(gpio_driver=gpio_driver)
@@ -70,9 +86,11 @@ def run_trials(
             )
             face = evaluator(image_path)
             if face is not None and (
-                not isinstance(face, int) or isinstance(face, bool) or face not in range(1, 7)
+                not isinstance(face, int)
+                or isinstance(face, bool)
+                or face not in range(first_face, first_face + sides)
             ):
-                raise ValueError(f"evaluator returned invalid d6 face: {face!r}")
+                raise ValueError(f"evaluator returned invalid d{sides} face: {face!r}")
             results[iteration] = face
     finally:
         controller.close()
@@ -80,8 +98,15 @@ def run_trials(
     return results
 
 
-def analyze_results(results: dict[int, Optional[int]]) -> tuple[dict[int, int], Optional[float]]:
-    face_counts = {face: 0 for face in range(1, 7)}
+def analyze_results(
+    results: dict[int, Optional[int]], sides: int = 6, first_face: int = 1
+) -> tuple[dict[int, int], Optional[float]]:
+    if sides not in SUPPORTED_SIDES:
+        raise ValueError(f"sides must be one of {SUPPORTED_SIDES}")
+    if first_face not in (0, 1):
+        raise ValueError("first_face must be 0 or 1")
+
+    face_counts = {face: 0 for face in range(first_face, first_face + sides)}
     for face in results.values():
         if face is not None:
             face_counts[face] += 1
@@ -90,7 +115,7 @@ def analyze_results(results: dict[int, Optional[int]]) -> tuple[dict[int, int], 
     if recognized == 0:
         return face_counts, None
 
-    expected = recognized / 6
+    expected = recognized / sides
     chi_square = sum((count - expected) ** 2 / expected for count in face_counts.values())
     return face_counts, chi_square
 
@@ -111,8 +136,16 @@ def main(
             print(f"Error: {exc}", file=sys.stderr)
             return 2
     if evaluator is None:
-        print("Error: provide an evaluator callback or --evaluator module:function", file=sys.stderr)
-        return 2
+        try:
+            recognizer = OrbDieRecognizer(
+                Path(parsed_args.templates_dir),
+                sides=parsed_args.sides,
+                first_face=parsed_args.first_face,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        evaluator = recognizer.evaluate
 
     try:
         results = run_trials(
@@ -123,18 +156,24 @@ def main(
             gpio_driver=gpio_driver,
             pulse_seconds=parsed_args.pulse_seconds,
             settle_seconds=parsed_args.settle_seconds,
+            sides=parsed_args.sides,
+            first_face=parsed_args.first_face,
             pause=pause,
         )
     except (GPIOZeroError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    face_counts, chi_square = analyze_results(results)
+    face_counts, chi_square = analyze_results(
+        results,
+        sides=parsed_args.sides,
+        first_face=parsed_args.first_face,
+    )
     recognized = sum(face_counts.values())
     print(f"Completed {len(results)} iterations; recognized {recognized}, unrecognized {len(results) - recognized}.")
     print("Face counts: " + ", ".join(f"{face}: {count}" for face, count in face_counts.items()))
     if chi_square is not None:
-        print(f"Chi-square statistic (df=5): {chi_square:.3f}")
+        print(f"Chi-square statistic (df={parsed_args.sides - 1}): {chi_square:.3f}")
     else:
         print("Chi-square statistic unavailable: no results were recognized.")
     return 0
